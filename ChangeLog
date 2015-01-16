@@ -1,2 +1,4 @@
 2015-01-16 Matt
 	* Adding ChangeLog and dir structure
+	* Including first draft of code. Realize now I don't use plane information, so solution
+		is not really unique.  Need to track down on paper where I go wrong
