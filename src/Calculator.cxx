@@ -7,6 +7,7 @@ using namespace std;
 // Constructor
 //---------------------------------------------------//
 Calculator::Calculator(float nx, float ny, float nz,
+		       float x0, float y0, float z0,
 		       float ind0, float ind1, bool dbg):
   firstRotation(NULL),
   secondRotation(NULL),
@@ -14,7 +15,8 @@ Calculator::Calculator(float nx, float ny, float nz,
 {
 
   // Set variables
-  norm = TVector3(nx,ny,nz);
+  norm  = TVector3(nx,ny,nz);
+  plane = TVector3(x0,y0,z0);
   n0 = ind0;
   n1 = ind1;
   m_dbg = dbg;
@@ -48,33 +50,52 @@ void Calculator::getIntPoint(float &xi, float &yi, float &zi,
   TVector3 p1 = TVector3(x1,y1,z1);
   
   // Apply first rotation (p for prime)
-  TVector3 p0p = *firstRotation * p0;
-  TVector3 p1p = *firstRotation * p1;
+  // Also apply to plane point
+  TVector3 p0p    = *firstRotation * p0;
+  TVector3 p1p    = *firstRotation * p1;
+  TVector3 planep = *firstRotation * plane; 
   
   // Set the second rotation and apply 
   // (pp for double prime)
   setSecondRotation(p0p, p1p);
-  TVector3 p0pp = *secondRotation * p0p;
-  TVector3 p1pp = *secondRotation * p1p;
+  TVector3 p0pp    = *secondRotation * p0p;
+  TVector3 p1pp    = *secondRotation * p1p;
+  TVector3 planepp = *secondRotation * planep;
+
+  // Now translate the two points such that we
+  // remove the z dependence.  By this point, 
+  // the plane already lies in the x-z plane only
+  TVector3 p0ppp = p0pp - planepp;
+  TVector3 p1ppp = p1pp - planepp;
 
   // Now calculate beta
-  float beta = (p0pp.Mag2() + p1pp.Mag2() - (p0pp-p1pp).Mag())/(2*p0pp.Mag()*p1pp.Mag());
-  
-  // Solve for theta_i and theta_r
-  float theta_r = -(TMath::Sin(TMath::ACos(beta)))/(beta + n1/n0);
-  float theta_i = TMath::Pi() + theta_r + TMath::ACos(beta);
-  
-  // Now get zipp
-  float zipp = (1/(1-TMath::Tan(theta_i)/TMath::Tan(theta_r))) *
-    (p0pp.z()+p1pp.x()-p1pp.x()*TMath::Tan(theta_i)-p1pp.z()*
-     TMath::Tan(theta_i)/TMath::Tan(theta_r));
-  float xipp = p1pp.x() - (p1pp.z() - zipp)/TMath::Tan(theta_r);
+  float beta = (p0ppp.Mag2() + p1ppp.Mag2() - (p0ppp-p1ppp).Mag2())/(2*p0ppp.Mag()*p1ppp.Mag());
 
-  // Construct pipp (pi'')
-  TVector3 pipp = TVector3(xipp,0,zipp);
+
+  // Solve for theta_i and theta_r
+  float theta_r = TMath::ATan(-(TMath::Sin(TMath::ACos(beta)))/(beta + n1/n0));
+  float theta_i = theta_r + TMath::ACos(beta) - TMath::Pi();
   
-  // Now rotate back
-  TVector3 pi = rotateBack(pipp);
+  // Now get xippp that satisfies the constraint
+  float xippp = p1ppp.z() * tan(theta_r) + p1ppp.x();
+  if( p0ppp.x() < p1ppp.x() && !(xippp+p0ppp.x() < xippp && xippp < xippp+p0ppp.x()))
+    xippp = p1ppp.x() - p1ppp.z() * tan(theta_r);
+  else if(p1ppp.x() < p0ppp.x() && !(xippp+p1ppp.x() < xippp && xippp < xippp+p0ppp.x()))
+    xippp = p1ppp.x() - p1ppp.z() * tan(theta_r);
+  if( p0ppp.x() < p1ppp.x() && !(xippp+p0ppp.x() < xippp && xippp < xippp+p1ppp.x())){
+    cout<<"There appears to be no solution"<<endl;
+    xippp = 0;
+  }
+  else if( p1ppp.x() < p0ppp.x() && !(xippp+p1ppp.x() < xippp && xippp < xippp+p0ppp.x())){
+    cout<<"There appears to be no solution"<<endl;
+    xippp = 0;
+  }
+
+  // Construct pippp (pi''')
+  TVector3 pippp = TVector3(xippp,0,0);
+  
+  // Now translate and rotate back
+  TVector3 pi = rotateBack(pippp+planepp);
   
   // Set variables
   xi = pi.x();
@@ -86,12 +107,18 @@ void Calculator::getIntPoint(float &xi, float &yi, float &zi,
     cout<<"---------------------------------------"<<endl;
     p0.Print();
     p1.Print();
+    plane.Print();
     cout<<"---------------------------------------"<<endl;
     p0p.Print();
     p1p.Print();
+    planep.Print();
     cout<<"---------------------------------------"<<endl;
     p0pp.Print();
     p1pp.Print();
+    planepp.Print();
+    cout<<"---------------------------------------"<<endl;
+    p0ppp.Print();
+    p1ppp.Print();
     cout<<"---------------------------------------"<<endl;
     cout<<"Beta: "<<beta<<endl;
     cout<<"Ref:  "<<theta_r<<endl;
@@ -151,9 +178,12 @@ void Calculator::setFirstRotation()
   else              firstRotation = new TMatrixF(identity - v_x + v_x*v_x*((1-c)/(s*s)));    
 
   // Debug info
-  cout<<"Printing first"<<endl;
-  if( m_dbg ) firstRotation->Print();
-  cout<<"After first"<<endl;
+  if( m_dbg ){
+    cout<<"-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-="<<endl;
+    firstRotation->Print();
+    cout<<"-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-="<<endl;
+  }
+
 }
 
 //---------------------------------------------------//
@@ -185,9 +215,12 @@ void Calculator::setSecondRotation(TVector3 p0,
   secondRotation = new TMatrixF(temp);
 
   // Debug info
-  cout<<"Printing second"<<endl;
-  if( m_dbg ) secondRotation->Print();
-  cout<<"After second"<<endl;
+  if( m_dbg ){
+    cout<<"-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-="<<endl;
+    secondRotation->Print();
+    cout<<"-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-="<<endl;
+  }
+
 }
 
 //---------------------------------------------------//

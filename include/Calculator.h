@@ -21,6 +21,7 @@ class Calculator
   
   // Constructor
   Calculator(float nx, float ny, float nz, // Normal vector
+	     float x0, float y0, float z0, // center of plane
 	     float ind0,                   // Index of refraction 0
 	     float ind1,                   // Index of refraction 1
 	     bool dbg = false);
@@ -43,15 +44,16 @@ class Calculator
 
   // Calculate the rotation matrix for y direction
   void setSecondRotation(TVector3 p0, TVector3 p1);
-
+  
   // Rotate the intersection point back to normal coords
   TVector3 rotateBack(TVector3 intPoint);
 
   // Variables
-  TVector3 norm;          // Normal vector to plane
+  TVector3 norm;            // Normal vector to plane
+  TVector3 plane;           // Center of the plane
 
-  float n0;               // Index of refraction for material 0
-  float n1;               // Index of refraction for material 1
+  float n0;                 // Index of refraction for material 0
+  float n1;                 // Index of refraction for material 1
 
   TMatrixF* firstRotation;  // Rotate into z direction
   TMatrixF* secondRotation; // Rotate into x-y plane
