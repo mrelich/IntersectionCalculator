@@ -6,23 +6,34 @@ using namespace std;
 //---------------------------------------------------//
 // Constructor
 //---------------------------------------------------//
-Calculator::Calculator(float nx, float ny, float nz,
-		       float x0, float y0, float z0,
+Calculator::Calculator(TVector3 v_norm, TVector3 planeCenter,
+		       float xwidth, float ywidth, float zwidth,
 		       float ind0, float ind1, bool dbg):
-  firstRotation(NULL),
-  secondRotation(NULL),
+  zRotation(NULL),
+  identity(NULL),
   m_dbg(false)
 {
 
   // Set variables
-  norm  = TVector3(nx,ny,nz);
-  plane = TVector3(x0,y0,z0);
+  norm   = v_norm;
+  planeC = planeCenter;
+  x_ice  = xwidth;
+  y_ice  = ywidth;
+  z_ice  = zwidth;
   n0 = ind0;
   n1 = ind1;
   m_dbg = dbg;
 
+  // Set identidy matrix
+  TMatrixF id = TMatrixF(3,3);
+  id(0,0) = 1;
+  id(1,1) = 1;
+  id(2,2) = 1;
+  identity = new TMatrixF(id);
+
+
   // Set the rotation matrix
-  setFirstRotation();
+  //setZRotation();
 
 }
 
@@ -32,109 +43,157 @@ Calculator::Calculator(float nx, float ny, float nz,
 Calculator::~Calculator()
 {
 
-  if( firstRotation ) firstRotation->Delete();
-  if( secondRotation ) secondRotation->Delete();
+  //if( firstRotation ) firstRotation->Delete();
+  if( zRotation ) zRotation->Delete();
 
 }
 
 //---------------------------------------------------//
 // Get interaction point
 //---------------------------------------------------//
-void Calculator::getIntPoint(float &xi, float &yi, float &zi,
-			     float x0, float y0, float z0,
-			     float x1, float y1, float z1)
+TVector3 Calculator::getIntPoint(TVector3 pt, TVector3 pa)
 {
 
-  // Setup points
-  TVector3 p0 = TVector3(x0,y0,z0);
-  TVector3 p1 = TVector3(x1,y1,z1);
-  
-  // Apply first rotation (p for prime)
-  // Also apply to plane point
-  TVector3 p0p    = *firstRotation * p0;
-  TVector3 p1p    = *firstRotation * p1;
-  TVector3 planep = *firstRotation * plane; 
-  
-  // Set the second rotation and apply 
-  // (pp for double prime)
-  setSecondRotation(p0p, p1p);
-  TVector3 p0pp    = *secondRotation * p0p;
-  TVector3 p1pp    = *secondRotation * p1p;
-  TVector3 planepp = *secondRotation * planep;
+  // Set the rotation matrix
+  setZRotation(TVector3(0,0,1), norm);
 
-  // Now translate the two points such that we
-  // remove the z dependence.  By this point, 
-  // the plane already lies in the x-z plane only
-  TVector3 p0ppp = p0pp - planepp;
-  TVector3 p1ppp = p1pp - planepp;
+  // Rotate the points pt and pa
+  TVector3 ptp = *zRotation * pt;
+  TVector3 pap = *zRotation * pa;
 
-  // Now calculate beta
-  float beta = (p0ppp.Mag2() + p1ppp.Mag2() - (p0ppp-p1ppp).Mag2())/(2*p0ppp.Mag()*p1ppp.Mag());
-
-
-  // Solve for theta_i and theta_r
-  float theta_r = TMath::ATan(-(TMath::Sin(TMath::ACos(beta)))/(beta + n1/n0));
-  float theta_i = theta_r + TMath::ACos(beta) - TMath::Pi();
-  
-  // Now get xippp that satisfies the constraint
-  float xippp = p1ppp.z() * tan(theta_r) + p1ppp.x();
-  if( p0ppp.x() < p1ppp.x() && !(xippp+p0ppp.x() < xippp && xippp < xippp+p0ppp.x()))
-    xippp = p1ppp.x() - p1ppp.z() * tan(theta_r);
-  else if(p1ppp.x() < p0ppp.x() && !(xippp+p1ppp.x() < xippp && xippp < xippp+p0ppp.x()))
-    xippp = p1ppp.x() - p1ppp.z() * tan(theta_r);
-  if( p0ppp.x() < p1ppp.x() && !(xippp+p0ppp.x() < xippp && xippp < xippp+p1ppp.x())){
-    cout<<"There appears to be no solution"<<endl;
-    xippp = 0;
-  }
-  else if( p1ppp.x() < p0ppp.x() && !(xippp+p1ppp.x() < xippp && xippp < xippp+p0ppp.x())){
-    cout<<"There appears to be no solution"<<endl;
-    xippp = 0;
+  if(m_dbg){
+    ptp.Print();
+    pap.Print();
+    TVector3 temp = (*zRotation * norm);
+    norm.Print();
+    temp.Print();    
+    temp = *zRotation * temp;
+    temp.Print();
   }
 
-  // Construct pippp (pi''')
-  TVector3 pippp = TVector3(xippp,0,0);
-  
-  // Now translate and rotate back
-  TVector3 pi = rotateBack(pippp+planepp);
-  
-  // Set variables
-  xi = pi.x();
-  yi = pi.y();
-  zi = pi.z();
+  // Shift by the z position of the plane.
+  // Here this isn't really setup to handle yet,
+  // so assume plane is at 0 already
+  // TODO: apply z-shift.
 
-  // Print some debug info
-  if( m_dbg ){
-    cout<<"---------------------------------------"<<endl;
-    p0.Print();
-    p1.Print();
-    plane.Print();
-    cout<<"---------------------------------------"<<endl;
-    p0p.Print();
-    p1p.Print();
-    planep.Print();
-    cout<<"---------------------------------------"<<endl;
-    p0pp.Print();
-    p1pp.Print();
-    planepp.Print();
-    cout<<"---------------------------------------"<<endl;
-    p0ppp.Print();
-    p1ppp.Print();
-    cout<<"---------------------------------------"<<endl;
-    cout<<"Beta: "<<beta<<endl;
-    cout<<"Ref:  "<<theta_r<<endl;
-    cout<<"Inc:  "<<theta_i<<endl;
-    cout<<"---------------------------------------"<<endl;
-    pi.Print();
-  }
+  // Now minimize to find the interaction point
+  TVector3 pip = scan(ptp,pap);
+
+  cout<<"---------------- Snell Check ----------------------"<<endl;
+  cout<<n0 * sin(atan(sqrt(pow(ptp.X()-pip.X(),2)+pow(ptp.Y()-pip.Y(),2))/fabs(ptp.Z())))<<endl;
+  cout<<n1 * sin(atan(sqrt(pow(pap.X()-pip.X(),2)+pow(pap.Y()-pip.Y(),2))/fabs(pap.Z())))<<endl;
+  cout<<pip.X()<<" "<<pip.Y()<<" "<<pip.Z()<<endl;
+  cout<<"Normal: "<<norm.X()<<" "<<norm.Y()<<" "<<norm.Z()<<endl;
+
+  // Now need to rotate back
+  setZRotation(norm, TVector3(0,0,1));
+  (*zRotation * ptp).Print();
+  (*zRotation * pap).Print();
+
+  if(*zRotation == *identity) return pip;
+  return (*zRotation) * pip;
+  
+}
+
+//---------------------------------------------------//
+// Scan x-y plane to find interaction point
+//---------------------------------------------------//
+TVector3 Calculator::scan(TVector3 pt, TVector3 pa)
+{
+
+  // Brute force scan
+  int nxsteps = 1000;
+  float xmin  = planeC.X() - x_ice/2.;
+  float xmax  = planeC.X() + x_ice/2.;
+  float xstep = (xmax-xmin)/nxsteps;
+
+  int nysteps = 1000;
+  float ymin  = planeC.Y() - y_ice/2.;
+  float ymax  = planeC.Y() + y_ice/2.;
+  float ystep = (ymax-ymin)/nysteps;
+
+  // Loop over and minimize the gradient in each 
+  // coordinate.
+  TVector3 pi = TVector3(0,0,0); // int point
+  float gradX = 9999;
+  float gradY = 9999;
+  TVector3 temp = TVector3(0,0,0);
+  for(int ix = 0; ix<nxsteps; ++ix){
+    float xi = xmin + ix * xstep;
+    
+    for(int iy = 0; iy<nysteps; ++iy){
+      float yi = ymin + iy * ystep;
+    
+      temp.SetXYZ(xi,yi,0);
+      float gx = fabs(getGradient(pt,pa,temp,0));
+      float gy = fabs(getGradient(pt,pa,temp,1));
+
+      //cout<<"xi: "<<xi<<" gx: "<<gx<<" current grad: "<<gradX<<endl;
+      if( gx <= gradX && gy <= gradY ){
+	gradX = gx;
+	gradY = gy;
+	pi.SetXYZ(xi,0,0);
+      }
+	
+
+    }// end loop over ysteps
+
+  }// end loop over xsteps
+
+  return pi;
 
 }
 
 //---------------------------------------------------//
+// Method to calculate the gradient
+//---------------------------------------------------//
+float Calculator::getGradient(TVector3 pt, TVector3 pa, TVector3 pi, 
+	   int option)
+{
+
+  float grad = 9999;
+
+  // Decide what coordinate we are looking at
+  float ct = 0, ca = 0, ci = 0;
+  if(option == 0){
+    ct = pt.X();
+    ca = pa.X();
+    ci = pi.X();
+  }
+  else if( option == 1 ){
+    ct = pt.Y();
+    ca = pa.Y();
+    ci = pi.Y();
+  }
+  else return grad;
+
+  // Get the constant factors
+  if( (pt-pi).Mag() == 0 ) return grad;
+  if( (pa-pi).Mag() == 0 ) return grad;
+
+  float t_const = n0 / ( (pt-pi).Mag());
+  float a_const = n1 / ( (pa-pi).Mag());
+
+  // Determine the sign
+  int t_sign = ci > ct ? -1 : 1;
+  int a_sign = ci > ca ? -1 : 1;
+  
+  // Get gradient for this term
+  grad = -t_const * t_sign * (ct - ci) -
+    a_const * a_sign * (ca - ci);
+  
+  return grad;
+
+
+}
+
+
+//---------------------------------------------------//
 // Set first rotation matrix
 // This matrix will rotate the normal vector into
-// just the z-direction
+// the z-direction
 //---------------------------------------------------//
-void Calculator::setFirstRotation()
+void Calculator::setZRotation(TVector3 k, TVector3 normal)
 {
 
   // To do this we first calculate some pieces
@@ -146,23 +205,17 @@ void Calculator::setFirstRotation()
 
 
   // Set k
-  TVector3 k = TVector3(0,0,1);
+  //TVector3 k = TVector3(0,0,1);
 
   // Get V
-  TVector3 v = norm.Cross( k );
+  TVector3 v = normal.Cross( k );
 
   // Get S
   float s = v.Mag();
 
   // Get C
-  float c = norm.Dot( k );
+  float c = normal.Dot( k );
 
-  // Set identidy matrix
-  TMatrixF identity = TMatrixF(3,3);
-  identity(0,0) = 1;
-  identity(1,1) = 1;
-  identity(2,2) = 1;
-  
   // Setup the skew symmetrix matrix
   TMatrixF v_x = TMatrixF(3,3);
   v_x(0,1) = -v(2);
@@ -174,68 +227,16 @@ void Calculator::setFirstRotation()
 
   // Set the first rotation
   // Special case: n || k
-  if( norm*k == 1 ) firstRotation = new TMatrixF(identity);  
-  else              firstRotation = new TMatrixF(identity - v_x + v_x*v_x*((1-c)/(s*s)));    
+  if( normal*k == 1 ) zRotation = new TMatrixF(*identity);  
+  else                zRotation = new TMatrixF(*identity + v_x + v_x*v_x*((1-c)/(s*s)));    
 
   // Debug info
   if( m_dbg ){
     cout<<"-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-="<<endl;
-    firstRotation->Print();
+    zRotation->Print();
     cout<<"-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-="<<endl;
   }
 
 }
 
-//---------------------------------------------------//
-// Set Second Rotation
-// This is meant to rotate the x and y positions
-// such that the two points lie in the x-y plane
-//---------------------------------------------------//
-void Calculator::setSecondRotation(TVector3 p0,
-				   TVector3 p1)
-{
 
-  // Condition is that phi = atan(-y0/x0)
-  // And then the rotation matrix is normal
-  // 2D matrix with angle phi.
-  
-  // Get angle
-  float phi = TMath::ATan(-p0.y()/p0.x());
-  
-  // Set matrix
-  TMatrixF temp = TMatrixF(3,3);
-  temp(0,0) = TMath::Cos(phi);
-  temp(0,1) = -TMath::Sin(phi);
-  temp(1,0) = TMath::Sin(phi);
-  temp(1,1) = TMath::Cos(phi);
-  temp(2,2) = 1;
-
-  // set second matrix
-  if( secondRotation ) secondRotation->Delete();
-  secondRotation = new TMatrixF(temp);
-
-  // Debug info
-  if( m_dbg ){
-    cout<<"-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-="<<endl;
-    secondRotation->Print();
-    cout<<"-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-=-="<<endl;
-  }
-
-}
-
-//---------------------------------------------------//
-// Rotate vector back
-//---------------------------------------------------//
-TVector3 Calculator::rotateBack(TVector3 intPoint)
-{
-
-  // Rotate by negative second rotation
-  TVector3 origPoint = (*secondRotation) * intPoint * (-1);
-
-  // Rotate by negative of first
-  origPoint = (*firstRotation) * origPoint*(-1);
-
-  // Now return
-  return origPoint;
-
-}
