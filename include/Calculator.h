@@ -11,8 +11,11 @@
 
 #include "TVector3.h"
 #include "TMatrix.h"
+#include "TMatrixT.h"
 #include "TMath.h"
 #include <iostream>
+
+typedef TMatrixT<double> TMatrixD; // should already be included...
 
 class Calculator
 {
@@ -22,11 +25,11 @@ class Calculator
   // Constructor
   Calculator(TVector3 v_norm,      // Normal to the plane
 	     TVector3 planeCenter, // Center of the plane position
-	     float xwidth,         // distance of cube in x
-	     float ywidth,         // distance of cube in y
-	     float zwidth,         // distance of cube in z
-	     float ind0,           // index of refraction 0
-	     float ind1,           // index of refraction 1
+	     double xwidth,         // distance of cube in x
+	     double ywidth,         // distance of cube in y
+	     double zwidth,         // distance of cube in z
+	     double ind0,           // index of refraction 0
+	     double ind1,           // index of refraction 1
 	     bool dbg = false);        
 
   // Destructor
@@ -50,7 +53,7 @@ class Calculator
   TVector3 scan(TVector3 pt, TVector3 pa);
 
   // Get the gradient for a point
-  float getGradient(TVector3 pt,    // track point
+  double getGradient(TVector3 pt,    // track point
 		    TVector3 pa,    // antenna point
 		    TVector3 pi,    // potential interaction point
 		    int option);
@@ -58,15 +61,15 @@ class Calculator
   // Variables
   TVector3 norm;            // Normal vector to plane
   TVector3 planeC;          // Center of the plane
-  float x_ice;              // x width of iceblock
-  float y_ice;              // y width of iceblock
-  float z_ice;              // z width of iceblock
+  double x_ice;              // x width of iceblock
+  double y_ice;              // y width of iceblock
+  double z_ice;              // z width of iceblock
 
-  float n0;                 // Index of refraction for material 0
-  float n1;                 // Index of refraction for material 1
+  double n0;                 // Index of refraction for material 0
+  double n1;                 // Index of refraction for material 1
 
-  TMatrixF* zRotation;      // Rotate into z direction
-  TMatrixF* identity;       // Identity matix
+  TMatrixD* zRotation;      // Rotate into z direction
+  TMatrixD* identity;       // Identity matix
 
   bool m_dbg;               // Debug flag
 
