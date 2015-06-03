@@ -71,6 +71,8 @@ class Calculator
   TMatrixD* zRotation;      // Rotate into z direction
   TMatrixD* identity;       // Identity matix
 
+  float m_tolerance;        // Tolerance for agreement with Snell's law
+
   bool m_dbg;               // Debug flag
 
 };

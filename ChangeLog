@@ -1,6 +1,8 @@
 2015-06-03 Matt:
 	* Third time is a charm: now it works for basic setup.
 	* Comitting before adding complexity
+	* Added ability to take into account offset in the z-pos of the top face of ice
+	* Worked out bug in calculation
 
 2015-06-02 Matt:
 	* Updating second draft.  Still buggy when including some tilts...

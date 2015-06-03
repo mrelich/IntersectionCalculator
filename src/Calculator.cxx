@@ -11,6 +11,7 @@ Calculator::Calculator(TVector3 v_norm, TVector3 planeCenter,
 		       double ind0, double ind1, bool dbg):
   zRotation(NULL),
   identity(NULL),
+  m_tolerance(1),
   m_dbg(false)
 {
 
@@ -32,9 +33,6 @@ Calculator::Calculator(TVector3 v_norm, TVector3 planeCenter,
   identity = new TMatrixT<double>(id);
 
 
-  // Set the rotation matrix
-  //setZRotation();
-
 }
 
 //---------------------------------------------------//
@@ -43,7 +41,6 @@ Calculator::Calculator(TVector3 v_norm, TVector3 planeCenter,
 Calculator::~Calculator()
 {
 
-  //if( firstRotation ) firstRotation->Delete();
   if( zRotation ) zRotation->Delete();
 
 }
@@ -62,18 +59,42 @@ TVector3 Calculator::getIntPoint(TVector3 pt, TVector3 pa)
   TVector3 pap = *zRotation * pa;
 
   // Shift by the z position of the plane.
-  // Here this isn't really setup to handle yet,
-  // so assume plane is at 0 already
-  // TODO: apply z-shift.
+  TVector3 zshift = TVector3(0,0,z_ice/2.);
+  TVector3 ptpp = ptp - zshift;
+  TVector3 papp = pap - zshift;
+
 
   // Now minimize to find the interaction point
-  TVector3 pip = scan(ptp,pap);
+  TVector3 pipp = scan(ptpp,papp);
 
-  // Now need to rotate back
+  // Snell's law check
+  float ang0 = atan(sqrt(pow(ptpp.X()-pipp.X(),2)+pow(ptpp.Y()-pipp.Y(),2))/fabs(ptpp.Z()));
+  float ang1 = atan(sqrt(pow(papp.X()-pipp.X(),2)+pow(papp.Y()-pipp.Y(),2))/fabs(papp.Z()));
+  float expectedAngle = (ang0 < asin(n1/n0)) ? asin(n0*sin(ang0)/n1) : 99999;
+  
+  if(m_dbg){
+    cout<<"------------------------- Snell's Law Check --------------------------"<<endl;
+    pipp.Print();
+    cout<<"Angles: "<<ang0*180/TMath::Pi()<<" "<<ang1*180/TMath::Pi()<<endl;
+    cout<<"Expected refracted angle: "<<expectedAngle*180/TMath::Pi()<<endl;
+    cout<<n0 * sin(ang0)<<endl;
+    cout<<n1 * sin(ang1)<<endl;
+
+  }
+
+  if( ang0 >= asin(n1/n0) || fabs(1 - expectedAngle/ang1) > m_tolerance ){
+    cout<<"Fail Snell's law test: "<<ang0*180/TMath::Pi()
+	<<" max allowd: "<<asin(n1/n0)*180/TMath::Pi()<<endl;
+    cout<<"\tDifference with expected: "<<fabs(1-expectedAngle/ang1)<<endl;
+    pipp.SetXYZ(-9999,-9999,-9999);
+    return pipp;
+  }
+    
+  // Now need to shift and rotate back
   setZRotation(norm, TVector3(0,0,1));
-
-  if(*zRotation == *identity) return pip;
-  return (*zRotation) * pip;
+  pipp += zshift;
+  if(*zRotation == *identity) return pipp;
+  return (*zRotation) * pipp;
   
 }
 
@@ -99,7 +120,7 @@ TVector3 Calculator::scan(TVector3 pt, TVector3 pa)
   TVector3 pi = TVector3(0,0,0); // int point
   
   double gradX = 9999;
-  double gradY = 9999;
+  //double gradY = 9999;
   TVector3 temp = TVector3(0,0,0);
   for(int ix = 0; ix<nxsteps; ++ix){
     double xi = xmin + ix * xstep;
@@ -111,10 +132,11 @@ TVector3 Calculator::scan(TVector3 pt, TVector3 pa)
       double gx = fabs(getGradient(pt,pa,temp,0));
       double gy = fabs(getGradient(pt,pa,temp,1));
 
-      if( gx <= gradX && gy <= gradY ){
-	//if( fabs(gx+gy) <= gradX ){
-	gradX = gx;
-	gradY = gy;
+      //if( gx <= gradX && gy <= gradY ){
+      if( fabs(gx+gy) <= gradX ){
+	//gradX = gx;
+	gradX = fabs(gx+gy);
+	//gradY = gy;
 	pi.SetXYZ(xi,yi,0);
       }
 	
@@ -165,7 +187,7 @@ double Calculator::getGradient(TVector3 pt, TVector3 pa, TVector3 pi,
 
   // The point should lie somewhere between 
   // the original points
-  if( !((ct <= ci && ci <= ca) || (ca <= ci && ci <= ca)) ) return grad;
+  if( !((ct <= ci && ci <= ca) || (ca <= ci && ci <= ct)) ) return grad;
 
   // Get the constant factors
   if( (pt-pi).Mag() == 0 ) return grad;
